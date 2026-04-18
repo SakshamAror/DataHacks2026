@@ -30,7 +30,7 @@ VAL_BOOKS     = os.environ["VAL_BOOKS"]
 WEIGHTS_PATH  = os.environ["WEIGHTS_PATH"]
 
 N        = int(os.environ.get("N", "60"))
-LR       = float(os.environ.get("LR", "0.01"))
+LR       = float(os.environ.get("LR", "0.1"))
 LAMBDA_  = float(os.environ.get("LAMBDA_", "0.01"))
 EPOCHS   = int(os.environ.get("EPOCHS", "100"))
 MAX_ROWS = int(os.environ.get("MAX_ROWS", "200000"))
@@ -40,10 +40,11 @@ FEATURE_NAMES = [
     "btc_spread",
     f"btc_momentum_{N}",
     f"chainlink_momentum_{N}",
-    "yes_ask",
-    "market_mispricing",
-    "book_imbalance",
+    "btc_drift_from_open",
+    "chainlink_drift_from_open",
     "time_remaining_frac",
+    "yes_ask",
+    "book_imbalance",
 ]
 
 
@@ -119,20 +120,23 @@ def binary_cross_entropy(y_true, y_pred):
 
 
 def train(X, y, lr=LR, lambda_=LAMBDA_, epochs=EPOCHS):
+    import random
     n = len(X[0])
     weights = [0.0] * n
     bias = 0.0
+    data = list(zip(X, y))
     for epoch in range(epochs):
+        random.shuffle(data)
         total_loss = 0.0
-        for feats, label in zip(X, y):
+        for feats, label in data:
             p = predict(feats, weights, bias)
             err = p - label
             total_loss += binary_cross_entropy(label, p)
             for i in range(n):
                 weights[i] -= lr * (err * feats[i] + lambda_ * weights[i])
             bias -= lr * err
-        if (epoch + 1) % 10 == 0:
-            print(f"  epoch {epoch+1:3d}/{epochs}  loss={total_loss/len(X):.4f}")
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f"  epoch {epoch+1:3d}/{epochs}  loss={total_loss/len(X):.6f}")
     return weights, bias
 
 
@@ -231,18 +235,49 @@ def build_features(db_path: str, binance_path: str, books_path: str) -> pd.DataF
     except Exception as e:
         print(f"  warning: could not load Chainlink prices: {e}")
 
-    print("  Loading market outcomes...")
-    outcomes: dict[str, str] = {}
+    print("  Loading market outcomes (DB table)...")
+    db_outcomes: dict[str, str] = {}
     try:
         cur = conn.execute(
             "SELECT market_slug, outcome FROM market_outcomes WHERE status='resolved'"
         )
-        outcomes = {row[0]: row[1] for row in cur.fetchall()}
+        db_outcomes = {row[0]: row[1] for row in cur.fetchall()}
     except Exception:
         pass
     conn.close()
 
-    print(f"  {len(prices_df):,} price rows, {len(outcomes):,} resolved outcomes")
+    # Derive outcomes from Chainlink for every market whose slug we can parse.
+    # This is the same logic the backtester uses: close >= open → YES.
+    print("  Deriving outcomes from Chainlink prices...")
+    chainlink_idx = chainlink_per_sec.set_index("ts_sec")["chainlink_btc"]
+    outcomes: dict[str, str] = {}
+    all_slugs = prices_df["market_slug"].unique()
+    for slug in all_slugs:
+        # Use DB table first if available and slug matches this time window
+        if slug in db_outcomes:
+            outcomes[slug] = db_outcomes[slug]
+            continue
+        lc = parse_slug(slug)
+        if lc is None:
+            continue
+        start_ts, end_ts, _ = lc
+        # Find nearest Chainlink price within ±5s of start and end
+        def _nearest(ts):
+            if chainlink_idx.empty:
+                return None
+            candidates = chainlink_idx.loc[max(ts-5, chainlink_idx.index.min()):ts+5]
+            if candidates.empty:
+                candidates = chainlink_idx
+            diff = (candidates.index.to_series() - ts).abs()
+            return float(candidates.iloc[diff.argmin()])
+        open_p  = _nearest(start_ts)
+        close_p = _nearest(end_ts)
+        if open_p is None or close_p is None:
+            continue
+        outcomes[slug] = "YES" if close_p >= open_p else "NO"
+
+    print(f"  {len(prices_df):,} price rows, {len(outcomes):,} outcomes derived "
+          f"({len(db_outcomes):,} from DB, {len(outcomes)-len(db_outcomes):,} from Chainlink)")
 
     print("  Loading Binance LOB...")
     binance_df = _load_binance(binance_path)
@@ -313,7 +348,8 @@ def build_features(db_path: str, binance_path: str, books_path: str) -> pd.DataF
     global_ts["chainlink_lag"] = global_ts["btc_mid"] - global_ts["chainlink_btc"]
 
     global_cols = [
-        "ts_sec", "chainlink_lag", "btc_spread",
+        "ts_sec", "btc_mid", "chainlink_btc",
+        "chainlink_lag", "btc_spread",
         f"btc_momentum_{N}", f"chainlink_momentum_{N}",
     ]
 
@@ -361,13 +397,29 @@ def build_features(db_path: str, binance_path: str, books_path: str) -> pd.DataF
     ).clip(0.0, 1.0)
     merged.drop(columns=["_start_ts", "_end_ts"], inplace=True)
 
+    # ── Drift from market open ────────────────────────────────────────────────────
+    # For each market, find btc_mid and chainlink_btc at the earliest tick.
+    # Drift = current - open: directly encodes whether BTC is up/down from open,
+    # which is exactly what determines YES/NO settlement.
+    merged = merged.sort_values(["market_slug", "ts_sec"])
+    open_prices = (
+        merged.groupby("market_slug")[["btc_mid", "chainlink_btc"]]
+        .first()
+        .rename(columns={"btc_mid": "_btc_open", "chainlink_btc": "_cl_open"})
+    )
+    merged = merged.join(open_prices, on="market_slug")
+    merged["btc_drift_from_open"]      = merged["btc_mid"]      - merged["_btc_open"]
+    merged["chainlink_drift_from_open"] = merged["chainlink_btc"] - merged["_cl_open"]
+    merged.drop(columns=["_btc_open", "_cl_open"], inplace=True)
+
     # ── Labels ───────────────────────────────────────────────────────────────────
     merged["label"] = merged["market_slug"].map(outcomes).map({"YES": 1, "NO": 0})
 
-    # Drop rows with missing label or any feature NaN
+    # Drop rows with no resolved label; fill missing features with 0
     before = len(merged)
-    merged = merged.dropna(subset=["label"] + FEATURE_NAMES)
-    print(f"  {len(merged):,} rows kept ({before - len(merged):,} dropped for NaN/no-outcome)")
+    merged = merged.dropna(subset=["label"])
+    merged[FEATURE_NAMES] = merged[FEATURE_NAMES].fillna(0.0)
+    print(f"  {len(merged):,} rows kept ({before - len(merged):,} dropped for no-outcome)")
     print(f"  {merged['market_slug'].nunique():,} unique markets, "
           f"label balance: {merged['label'].mean():.3f}")
 

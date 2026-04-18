@@ -31,8 +31,10 @@ _WEIGHTS_PATH = os.environ.get(
     str(Path(__file__).parent / "model_weights.json"),
 )
 
-THRESHOLD  = float(os.environ.get("THRESHOLD", "0.03"))
-TRADE_SIZE = float(os.environ.get("TRADE_SIZE", "10"))
+THRESHOLD    = float(os.environ.get("THRESHOLD", "0.03"))
+TRADE_SIZE   = float(os.environ.get("TRADE_SIZE", "10"))
+MAX_POSITION = float(os.environ.get("MAX_POSITION", "500"))  # shares per side per market
+LIMIT_PAD    = float(os.environ.get("LIMIT_PAD", "0.01"))    # pad limit price for 1s execution lag
 MIN_TIME_FRAC = 0.20  # skip markets in their final 20%
 
 
@@ -67,8 +69,12 @@ class LogRegStrategy(BaseStrategy):
         self._btc_buf = deque(maxlen=self._N + 1)
         self._cl_buf  = deque(maxlen=self._N + 1)
 
-        # Track entries so we don't double-enter the same (market, side)
-        self._entered: set[tuple[str, Token]] = set()
+        # BTC and Chainlink price at first tick each market was seen
+        self._btc_open: dict[str, float] = {}
+        self._cl_open:  dict[str, float] = {}
+
+        # Cumulative shares held per (market, side) — capped at MAX_POSITION
+        self._positions: dict[tuple[str, Token], float] = {}
 
         # Latest forecasts (returned via get_forecasts for Brier scoring)
         self._forecasts: dict[str, float] = {}
@@ -94,23 +100,35 @@ class LogRegStrategy(BaseStrategy):
         )
 
         # Per-market features
-        yes_ask          = market.yes_ask
-        market_mispricing = yes_ask - 0.5
-        total_bid        = market.yes_book.total_bid_size
+        yes_ask   = market.yes_ask
+        total_bid = market.yes_book.total_bid_size
         total_ask        = market.yes_book.total_ask_size
         book_imbalance   = (total_bid - total_ask) / (total_bid + total_ask + 1e-9)
         time_remaining   = market.time_remaining_frac
 
         # Build in the exact order stored in weights JSON
+        # Drift from market open — record on first tick, compute delta every tick
+        if slug not in self._btc_open and state.btc_mid > 0:
+            self._btc_open[slug] = state.btc_mid
+        if slug not in self._cl_open and state.chainlink_btc > 0:
+            self._cl_open[slug] = state.chainlink_btc
+        btc_drift = state.btc_mid      - self._btc_open.get(slug, state.btc_mid)
+        cl_drift  = state.chainlink_btc - self._cl_open.get(slug, state.chainlink_btc)
+
+        total_bid = market.yes_book.total_bid_size
+        total_ask = market.yes_book.total_ask_size
+        book_imbalance = (total_bid - total_ask) / (total_bid + total_ask + 1e-9)
+
         feat_lookup = {
-            "chainlink_lag":            chainlink_lag,
-            "btc_spread":               btc_spread,
-            f"btc_momentum_{self._N}":  btc_momentum,
+            "chainlink_lag":                 chainlink_lag,
+            "btc_spread":                    btc_spread,
+            f"btc_momentum_{self._N}":       btc_momentum,
             f"chainlink_momentum_{self._N}": cl_momentum,
-            "yes_ask":                  yes_ask,
-            "market_mispricing":        market_mispricing,
-            "book_imbalance":           book_imbalance,
-            "time_remaining_frac":      time_remaining,
+            "btc_drift_from_open":           btc_drift,
+            "chainlink_drift_from_open":     cl_drift,
+            "time_remaining_frac":           time_remaining,
+            "yes_ask":                       yes_ask,
+            "book_imbalance":                book_imbalance,
         }
         return [feat_lookup.get(name, 0.0) for name in self._feature_names]
 
@@ -143,31 +161,37 @@ class LogRegStrategy(BaseStrategy):
 
             if yes_ask > 0 and p_yes > yes_ask + THRESHOLD:
                 key = (slug, Token.YES)
-                if key not in self._entered:
-                    cost = TRADE_SIZE * yes_ask
+                held = self._positions.get(key, 0.0)
+                room = MAX_POSITION - held
+                size = min(TRADE_SIZE, room)
+                if size > 0:
+                    cost = size * yes_ask
                     if state.cash >= cost:
                         orders.append(Order(
                             market_slug=slug,
                             token=Token.YES,
                             side=Side.BUY,
-                            size=TRADE_SIZE,
-                            limit_price=yes_ask,
+                            size=size,
+                            limit_price=min(yes_ask + LIMIT_PAD, 0.99),
                         ))
-                        self._entered.add(key)
+                        self._positions[key] = held + size
 
             elif yes_bid > 0 and p_yes < yes_bid - THRESHOLD:
                 key = (slug, Token.NO)
-                if key not in self._entered and no_ask > 0:
-                    cost = TRADE_SIZE * no_ask
+                held = self._positions.get(key, 0.0)
+                room = MAX_POSITION - held
+                size = min(TRADE_SIZE, room)
+                if size > 0 and no_ask > 0:
+                    cost = size * no_ask
                     if state.cash >= cost:
                         orders.append(Order(
                             market_slug=slug,
                             token=Token.NO,
                             side=Side.BUY,
-                            size=TRADE_SIZE,
-                            limit_price=no_ask,
+                            size=size,
+                            limit_price=min(no_ask + LIMIT_PAD, 0.99),
                         ))
-                        self._entered.add(key)
+                        self._positions[key] = held + size
 
         return orders
 
@@ -176,6 +200,8 @@ class LogRegStrategy(BaseStrategy):
 
     def on_settlement(self, settlement: Settlement) -> None:
         slug = settlement.market_slug
-        self._entered.discard((slug, Token.YES))
-        self._entered.discard((slug, Token.NO))
+        self._positions.pop((slug, Token.YES), None)
+        self._positions.pop((slug, Token.NO), None)
         self._forecasts.pop(slug, None)
+        self._btc_open.pop(slug, None)
+        self._cl_open.pop(slug, None)
