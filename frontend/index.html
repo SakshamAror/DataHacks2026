@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OGQuants · Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <div class="bg">
+    <div class="bokeh"></div>
+  </div>
+
+  <div class="panel">
+    <nav class="nav">
+      <span class="logo">OGQuants</span>
+      <div class="nav-group">
+        <button class="pill active">Portfolio</button>
+        <button class="pill" disabled title="Coming soon">Buy</button>
+      </div>
+    </nav>
+
+    <main class="main">
+      <header class="chart-header">
+        <div class="chart-header-left">
+          <h1>Portfolio Performance</h1>
+          <span class="period" id="period-text">my_strategy.py &middot; BTC &middot; 5m &middot; 4h window</span>
+        </div>
+        <button class="run-btn" id="run-btn" onclick="runBacktest()">
+          <span id="run-btn-text">Run Backtest</span>
+        </button>
+      </header>
+
+      <div class="chart-wrap" id="chart-wrap">
+        <div id="chart"></div>
+        <div class="chart-overlay hidden" id="chart-overlay">
+          <div class="spinner"></div>
+          <p class="overlay-text">Running backtest…</p>
+        </div>
+      </div>
+
+      <div id="error-bar" class="error-bar hidden"></div>
+
+      <div class="metrics-grid">
+        <div class="metric">
+          <p class="m-label">Total P&amp;L</p>
+          <p class="m-val positive" id="m-pnl">—</p>
+          <p class="m-note" id="m-pnl-note">run backtest to load</p>
+        </div>
+        <div class="metric">
+          <p class="m-label">Sharpe Ratio</p>
+          <p class="m-val" id="m-sharpe">—</p>
+          <p class="m-note">Annualized</p>
+        </div>
+        <div class="metric">
+          <p class="m-label">Max Drawdown</p>
+          <p class="m-val" id="m-drawdown">—</p>
+          <p class="m-note" id="m-drawdown-note">—</p>
+        </div>
+        <div class="metric">
+          <p class="m-label">Win Rate</p>
+          <p class="m-val" id="m-winrate">—</p>
+          <p class="m-note" id="m-settlements-note">—</p>
+        </div>
+        <div class="metric">
+          <p class="m-label">Total Trades</p>
+          <p class="m-val" id="m-trades">—</p>
+          <p class="m-note" id="m-trades-note">—</p>
+        </div>
+        <div class="metric">
+          <p class="m-label">Final Value</p>
+          <p class="m-val" id="m-final">—</p>
+          <p class="m-note" id="m-final-note">—</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
