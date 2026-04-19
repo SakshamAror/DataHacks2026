@@ -16,31 +16,32 @@ dash.register_page(__name__, path="/feature-wiki", name="Feature Wiki", order=3)
 
 _CONTENT_DIR = Path(__file__).resolve().parent.parent / "content" / "features"
 
-_BG     = "#faf9f5"
-_CARD   = "#ffffff"
-_BORDER = "#e8e6dc"
-_TEXT   = "#141413"
-_MUTED  = "#6b6b63"
-_ORANGE = "#d97757"
-_GREEN  = "#788c5d"
-_RED    = "#c0392b"
-_BLUE   = "#6a9bcc"
+# ── Glass palette ───────────────────────────────────────────────────────────────
+_BG     = "transparent"
+_CARD   = "rgba(255,255,255,0.08)"
+_BORDER = "rgba(255,255,255,0.14)"
+_TEXT   = "#ffffff"
+_MUTED  = "rgba(255,255,255,0.5)"
+_ORANGE = "#4ade80"
+_GREEN  = "#4ade80"
+_RED    = "#f87171"
+_BLUE   = "#60a5fa"
 
 _GROUP_COLORS = {
     "BTC Momentum": _BLUE,
     "BTC Spread":   "#14b8a6",
     "Poly Prob":    _GREEN,
     "OBI":          _ORANGE,
-    "Poly Spread":  "#b58a6e",
-    "Timing":       "#9b8ec4",
+    "Poly Spread":  "#f59e0b",
+    "Timing":       "#a78bfa",
     "Divergence":   _RED,
     # Legacy keys
     "A · BTC Momentum": _BLUE,
     "B · BTC Spread":   "#14b8a6",
     "C · Poly Prob":    _GREEN,
     "D · OBI":          _ORANGE,
-    "E · Poly Spread":  "#b58a6e",
-    "F · Timing":       "#9b8ec4",
+    "E · Poly Spread":  "#f59e0b",
+    "F · Timing":       "#a78bfa",
     "G · Divergence":   _RED,
 }
 
@@ -80,15 +81,14 @@ def _render_content(feature_name: str):
     if not feature_name or feature_name not in _FEATURE_META:
         return dbc.Card(dbc.CardBody([
             html.H5("Feature not found",
-                    style={"color": _TEXT, "fontFamily": "Poppins,sans-serif",
+                    style={"color": _TEXT, "fontFamily": "Raleway,sans-serif",
                            "fontWeight": "600"}),
             html.P(["Go back to the ",
-                    dcc.Link("Factor Library", href="/factor-library",
-                             style={"color": _ORANGE}),
+                    dcc.Link("Factor Library", href="/factor-library"),
                     " and click a feature card."],
-                   style={"color": _MUTED, "fontFamily": "Lora,Georgia,serif"}),
-        ]), style={"backgroundColor": _CARD, "border": f"1px solid {_BORDER}",
-                   "borderRadius": "12px"})
+                   style={"color": _MUTED, "fontFamily": "Inter,sans-serif"}),
+        ]), style={"background": _CARD, "border": f"1px solid {_BORDER}",
+                   "borderRadius": "16px", "backdropFilter": "blur(20px)"})
 
     group, expr = _FEATURE_META[feature_name]
     gc = _GROUP_COLORS.get(group, "#888")
@@ -98,9 +98,9 @@ def _render_content(feature_name: str):
         dbc.Col([
             html.Div([
                 html.Span(group,
-                          style={"backgroundColor": f"{gc}18", "color": gc,
-                                 "border": f"1px solid {gc}44",
-                                 "fontSize": "0.72rem", "fontFamily": "Poppins,sans-serif",
+                          style={"backgroundColor": f"{gc}22", "color": gc,
+                                 "border": f"1px solid {gc}66",
+                                 "fontSize": "0.72rem", "fontFamily": "Inter,sans-serif",
                                  "fontWeight": "500", "padding": "2px 10px",
                                  "borderRadius": "20px", "marginBottom": "10px",
                                  "display": "inline-block"}),
@@ -110,49 +110,42 @@ def _render_content(feature_name: str):
                            "fontWeight": "700", "marginBottom": "6px",
                            "fontSize": "1.3rem"}),
             html.Code(expr,
-                      style={"color": _MUTED, "fontSize": "0.88rem",
-                             "backgroundColor": f"{_BORDER}80",
+                      style={"fontSize": "0.88rem",
                              "padding": "2px 8px", "borderRadius": "4px"}),
         ], width=8),
         dbc.Col([
             dcc.Link(dbc.Button("← Factor Library", color="outline-secondary", size="sm",
-                                style={"borderRadius": "8px",
-                                       "fontFamily": "Poppins,sans-serif"}),
+                                style={"borderRadius": "50px",
+                                       "fontFamily": "Inter,sans-serif"}),
                      href="/factor-library"),
             dcc.Link(dbc.Button("Model →", size="sm", className="ms-2",
-                                style={"borderRadius": "8px", "border": "none",
-                                       "backgroundColor": _ORANGE, "color": "white",
-                                       "fontFamily": "Poppins,sans-serif"}),
+                                style={"borderRadius": "50px", "border": "none",
+                                       "backgroundColor": _ORANGE, "color": "#14532d",
+                                       "fontFamily": "Inter,sans-serif", "fontWeight": "600"}),
                      href="/model"),
         ], width=4, className="text-end d-flex align-items-center justify-content-end"),
     ], className="mb-4 align-items-start")
 
     if wiki_md:
         body = dbc.Card(dbc.CardBody(
-            dcc.Markdown(wiki_md, style={"lineHeight": "1.85", "fontSize": "0.93rem",
-                                         "color": _TEXT,
-                                         "fontFamily": "Lora,Georgia,serif"}),
-        ), style={"backgroundColor": _CARD, "border": f"1px solid {_BORDER}",
-                   "borderRadius": "12px", "boxShadow": "0 1px 4px rgba(0,0,0,0.06)"})
+            dcc.Markdown(wiki_md, style={"lineHeight": "1.85", "fontSize": "0.93rem"}),
+        ), style={"background": _CARD, "border": f"1px solid {_BORDER}",
+                   "borderRadius": "16px", "backdropFilter": "blur(20px)"})
     else:
         body = dbc.Card(dbc.CardBody(
             html.P("Wiki content not yet written for this feature.",
-                   style={"color": _MUTED, "fontFamily": "Lora,Georgia,serif",
+                   style={"color": _MUTED, "fontFamily": "Inter,sans-serif",
                           "margin": 0}),
-        ), style={"backgroundColor": _CARD, "border": f"1px solid {_BORDER}",
-                   "borderRadius": "12px"})
+        ), style={"background": _CARD, "border": f"1px solid {_BORDER}",
+                   "borderRadius": "16px", "backdropFilter": "blur(20px)"})
 
     return html.Div([header, body])
 
 
-layout = dbc.Container(
-    fluid=True, className="px-4 py-3",
-    style={"backgroundColor": _BG, "minHeight": "100vh"},
-    children=[
-        dcc.Location(id="wiki-url", refresh=False),
-        html.Div(id="wiki-content"),
-    ],
-)
+layout = html.Div([
+    dcc.Location(id="wiki-url", refresh=False),
+    html.Div(id="wiki-content"),
+])
 
 
 @callback(

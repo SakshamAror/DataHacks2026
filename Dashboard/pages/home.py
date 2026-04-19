@@ -5,7 +5,6 @@ Home page — Run Backtest + live market view (left) + PNL chart (right).
 import sys
 from pathlib import Path
 
-# Force pandas to fully initialise before plotly touches it (prevents circular-import crash)
 import pandas as _pd  # noqa: F401
 
 import dash
@@ -25,67 +24,67 @@ if not Path(_DATA_DIR).exists():
 
 dash.register_page(__name__, path="/", name="Backtest", order=0)
 
-# ── Anthropic palette ──────────────────────────────────────────────────────────
-_BG     = "#faf9f5"
-_CARD   = "#ffffff"
-_BORDER = "#e8e6dc"
-_TEXT   = "#141413"
-_MUTED  = "#6b6b63"
-_ORANGE = "#d97757"
-_GREEN  = "#788c5d"
-_RED    = "#c0392b"
-_BLUE   = "#6a9bcc"
+# ── Glass palette ──────────────────────────────────────────────────────────────
+_BG     = "transparent"
+_CARD   = "rgba(255,255,255,0.08)"
+_BORDER = "rgba(255,255,255,0.14)"
+_TEXT   = "#ffffff"
+_MUTED  = "rgba(255,255,255,0.5)"
+_ORANGE = "#4ade80"
+_GREEN  = "#4ade80"
+_RED    = "#f87171"
+_BLUE   = "#60a5fa"
 
 
 # ── Slug parser ────────────────────────────────────────────────────────────────
 
 def _parse_slug(slug: str) -> tuple[str, str]:
-    """Return (title, subtitle) from a slug like btc-updown-5m-1776195300."""
     from datetime import datetime, timezone
-
     parts = slug.lower().split("-")
     asset    = parts[0].upper() if parts else "?"
     interval = next((p for p in parts if p.endswith("m") or p.endswith("h")), "?")
-
-    # Last all-digit segment is unix timestamp
-    ts_str = next((p for p in reversed(parts) if p.isdigit()), None)
+    ts_str   = next((p for p in reversed(parts) if p.isdigit()), None)
     if ts_str:
         try:
-            dt = datetime.fromtimestamp(int(ts_str), tz=timezone.utc)
+            dt      = datetime.fromtimestamp(int(ts_str), tz=timezone.utc)
             exp_str = dt.strftime("%H:%M UTC")
         except (ValueError, OSError):
             exp_str = "?"
     else:
         exp_str = "?"
-
     direction = "Up / Down" if "updown" in slug else "Prediction"
-    title    = f"{asset}  {direction}  ·  {interval}"
-    subtitle = f"Expires {exp_str}"
-    return title, subtitle
+    return f"{asset}  {direction}  ·  {interval}", f"Expires {exp_str}"
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _safe_figure(build_fn):
-    """Call build_fn(); on any error return a blank figure."""
     try:
         return build_fn()
     except Exception:
         return go.Figure()
 
 
+def _glass_layout(**extra):
+    base = dict(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="rgba(255,255,255,0.65)", family="Inter, system-ui, sans-serif"),
+        margin=dict(l=60, r=20, t=10, b=40),
+    )
+    base.update(extra)
+    return base
+
+
 def _empty_pnl_figure():
     fig = go.Figure()
     fig.update_layout(
-        template="plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        **_glass_layout(margin=dict(l=70, r=20, t=10, b=40)),
         xaxis=dict(showgrid=False, zeroline=False, title="",
                    color=_MUTED, linecolor=_BORDER),
-        yaxis=dict(showgrid=True, gridcolor=_BORDER, zeroline=False,
-                   title="Portfolio Value ($)", color=_MUTED),
-        margin=dict(l=70, r=20, t=10, b=40),
-        font=dict(color=_TEXT, family="Lora, Georgia, serif"),
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.07)", zeroline=False,
+                   title="Portfolio Value ($)", color=_MUTED,
+                   linecolor="rgba(255,255,255,0.08)"),
     )
     return fig
 
@@ -100,12 +99,11 @@ def _pnl_figure(all_pnl):
     ys = [r["total_value"] for r in all_pnl]
     up = ys[-1] >= 10_000
     line_color = _GREEN if up else _RED
-    fill_color = "rgba(120,140,93,0.10)" if up else "rgba(192,57,43,0.10)"
+    fill_color = "rgba(74,222,128,0.12)" if up else "rgba(248,113,113,0.12)"
 
-    # Auto-scale: pad 0.5% above/below actual range, never forced to include 0
     y_min = min(ys)
     y_max = max(ys)
-    pad   = max((y_max - y_min) * 0.08, 5)   # at least $5 breathing room
+    pad   = max((y_max - y_min) * 0.08, 5)
 
     fig.add_trace(go.Scatter(
         x=xs, y=ys, mode="lines",
@@ -115,11 +113,11 @@ def _pnl_figure(all_pnl):
         name="Portfolio Value",
     ))
     fig.add_hline(y=10_000, line_dash="dot",
-                  line_color="rgba(107,107,99,0.35)", line_width=1)
+                  line_color="rgba(255,255,255,0.2)", line_width=1)
     fig.update_layout(
         yaxis=dict(
             range=[y_min - pad, y_max + pad],
-            showgrid=True, gridcolor=_BORDER, zeroline=False,
+            showgrid=True, gridcolor="rgba(255,255,255,0.07)", zeroline=False,
             title="Portfolio Value ($)", color=_MUTED,
         )
     )
@@ -138,14 +136,14 @@ def _summary_cards(summary: dict):
 
     def _c(label, value, color):
         return dbc.Col(dbc.Card(dbc.CardBody([
-            html.P(label, style={"color": _MUTED, "fontSize": "0.78rem",
-                                  "fontFamily": "Poppins,sans-serif",
-                                  "fontWeight": "500", "marginBottom": "4px",
-                                  "letterSpacing": "0.04em", "textTransform": "uppercase"}),
-            html.H5(value, style={"color": color, "fontFamily": "Poppins,sans-serif",
+            html.P(label, style={"color": _MUTED, "fontSize": "0.72rem",
+                                  "fontFamily": "Inter,sans-serif", "fontWeight": "600",
+                                  "marginBottom": "4px", "letterSpacing": "0.05em",
+                                  "textTransform": "uppercase"}),
+            html.H5(value, style={"color": color, "fontFamily": "Raleway,sans-serif",
                                    "fontWeight": "700", "margin": 0}),
-        ]), style={"backgroundColor": _CARD, "border": f"1px solid {_BORDER}",
-                   "borderRadius": "12px"}), xs=6, md=3)
+        ]), style={"background": _CARD, "border": f"1px solid {_BORDER}",
+                   "borderRadius": "14px", "backdropFilter": "blur(20px)"}), xs=6, md=3)
 
     return [
         _c("Total P&L", pnl_str, pnl_color),
@@ -167,27 +165,29 @@ def _net_position(fills):
 
 
 def _fill_blocks(fills):
-    """Small colored action pills for each fill event."""
     if not fills:
         return html.Div()
     blocks = []
     for f in fills:
         is_buy = f["side"] == "BUY"
-        bg = _GREEN if is_buy else _RED
-        arrow = "▲" if is_buy else "▼"
-        token = f.get("token", "YES")
-        size  = int(f.get("size", 0))
-        price = f.get("avg_price", 0)
+        bg     = "rgba(74,222,128,0.25)"  if is_buy else "rgba(248,113,113,0.25)"
+        border = "rgba(74,222,128,0.5)"   if is_buy else "rgba(248,113,113,0.5)"
+        color  = "#4ade80" if is_buy else "#f87171"
+        arrow  = "▲" if is_buy else "▼"
+        token  = f.get("token", "YES")
+        size   = int(f.get("size", 0))
+        price  = f.get("avg_price", 0)
         blocks.append(html.Span(
             f"{arrow} {f['side']} {token}  {size} @ {price:.3f}",
             style={
                 "backgroundColor": bg,
-                "color": "#ffffff",
+                "color": color,
+                "border": f"1px solid {border}",
                 "fontSize": "0.70rem",
                 "fontFamily": "monospace",
                 "fontWeight": "600",
                 "padding": "2px 10px",
-                "borderRadius": "4px",
+                "borderRadius": "20px",
                 "display": "inline-block",
                 "letterSpacing": "0.01em",
             },
@@ -201,26 +201,23 @@ def _market_card(slug, ts_list, yes_list, p_list, fills):
     yes_pos, no_pos = _net_position(fills)
     has_position    = abs(yes_pos) > 0.01 or abs(no_pos) > 0.01
 
-    # Position indicator
     if has_position:
         pos_parts = []
-        if abs(yes_pos) > 0.01:
-            pos_parts.append(f"YES {yes_pos:+.0f}")
-        if abs(no_pos) > 0.01:
-            pos_parts.append(f"NO {no_pos:+.0f}")
+        if abs(yes_pos) > 0.01: pos_parts.append(f"YES {yes_pos:+.0f}")
+        if abs(no_pos)  > 0.01: pos_parts.append(f"NO {no_pos:+.0f}")
         pos_badge = dbc.Badge(
             "  |  ".join(pos_parts),
-            style={"backgroundColor": f"{_ORANGE}22", "color": _ORANGE,
-                   "border": f"1px solid {_ORANGE}55",
-                   "fontSize": "0.70rem", "fontFamily": "Poppins,sans-serif"},
+            style={"backgroundColor": "rgba(74,222,128,0.15)", "color": _GREEN,
+                   "border": "1px solid rgba(74,222,128,0.4)",
+                   "fontSize": "0.70rem", "fontFamily": "Inter,sans-serif",
+                   "borderRadius": "20px"},
         )
     else:
         pos_badge = dbc.Badge("No open position",
-                               style={"backgroundColor": f"{_MUTED}15",
+                               style={"backgroundColor": "rgba(255,255,255,0.08)",
                                       "color": _MUTED, "border": f"1px solid {_BORDER}",
-                                      "fontSize": "0.70rem"})
+                                      "fontSize": "0.70rem", "borderRadius": "20px"})
 
-    # Mini chart
     fig = go.Figure()
     if yes_list:
         xs = list(range(len(yes_list)))
@@ -229,31 +226,29 @@ def _market_card(slug, ts_list, yes_list, p_list, fills):
         fig.add_trace(go.Scatter(x=xs, y=p_list, mode="lines", name="Model",
                                   line=dict(color=_ORANGE, width=1.6, dash="dot")))
         for f in fills:
-            idx  = f.get("chart_idx", len(xs) - 1)
-            yv   = f.get("avg_price", 0.5)
-            side = f.get("side", "BUY")
+            idx       = f.get("chart_idx", len(xs) - 1)
+            yv        = f.get("avg_price", 0.5)
+            side      = f.get("side", "BUY")
             pin_color = _GREEN if side == "BUY" else _RED
-            sym = "triangle-up" if side == "BUY" else "triangle-down"
+            sym       = "triangle-up" if side == "BUY" else "triangle-down"
             fig.add_trace(go.Scatter(
                 x=[idx], y=[yv], mode="markers",
                 marker=dict(symbol=sym, size=11, color=pin_color,
-                            line=dict(width=1.5, color="white")),
+                            line=dict(width=1.5, color="rgba(255,255,255,0.8)")),
                 showlegend=False,
                 hovertext=f"{side} {f.get('token','?')} {int(f.get('size',0))} @ {f.get('avg_price',0):.3f}",
                 hoverinfo="text",
             ))
 
     fig.update_layout(
-        template="plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        **_glass_layout(margin=dict(l=32, r=8, t=6, b=18)),
         height=120,
-        margin=dict(l=32, r=8, t=6, b=18),
         xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
-        yaxis=dict(showgrid=True, gridcolor=_BORDER, range=[0, 1],
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.07)", range=[0, 1],
                    tickformat=".0%", tickfont=dict(size=9, color=_MUTED)),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                    xanchor="right", x=1, font=dict(size=9, color=_MUTED)),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    font=dict(size=9, color=_MUTED),
+                    bgcolor="rgba(0,0,0,0)", bordercolor="rgba(255,255,255,0.1)"),
         hovermode="x unified",
     )
 
@@ -261,20 +256,19 @@ def _market_card(slug, ts_list, yes_list, p_list, fills):
     last_p   = p_list[-1]   if p_list   else None
     edge_str = ""
     if last_yes is not None and last_p is not None:
-        edge = last_p - last_yes
+        edge       = last_p - last_yes
         edge_color = _GREEN if edge > 0.04 else (_ORANGE if edge > 0 else _RED)
-        edge_str = html.Span(f"Edge {edge:+.3f}",
-                             style={"color": edge_color, "fontFamily": "monospace",
-                                    "fontSize": "0.75rem", "fontWeight": "600"})
+        edge_str   = html.Span(f"Edge {edge:+.3f}",
+                               style={"color": edge_color, "fontFamily": "monospace",
+                                      "fontSize": "0.75rem", "fontWeight": "600"})
 
     return dbc.Card(
         dbc.CardBody([
-            # Header: title + subtitle + position badge
             dbc.Row([
                 dbc.Col([
-                    html.Div(title, style={"fontFamily": "Poppins,sans-serif",
-                                           "fontWeight": "600", "fontSize": "0.85rem",
-                                           "color": _TEXT, "letterSpacing": "-0.01em"}),
+                    html.Div(title, style={"fontFamily": "Inter,sans-serif", "fontWeight": "600",
+                                           "fontSize": "0.85rem", "color": _TEXT,
+                                           "letterSpacing": "-0.01em"}),
                     html.Div(subtitle, style={"color": _MUTED, "fontSize": "0.73rem",
                                               "fontFamily": "monospace"}),
                 ], width=7),
@@ -283,101 +277,93 @@ def _market_card(slug, ts_list, yes_list, p_list, fills):
                     html.Div(edge_str, className="text-end mt-1") if edge_str else html.Div(),
                 ], width=5),
             ], className="mb-1 align-items-start"),
-
-            # Price chart
-            dcc.Graph(figure=fig, config={"displayModeBar": False},
-                      style={"height": "120px"}),
-
-            # Fill action blocks
+            dcc.Graph(figure=fig, config={"displayModeBar": False}, style={"height": "120px"}),
             _fill_blocks(fills),
         ], style={"padding": "12px 14px 10px"}),
-        style={"backgroundColor": _CARD, "border": f"1px solid {_BORDER}",
-               "borderRadius": "12px", "marginBottom": "10px",
-               "boxShadow": "0 1px 4px rgba(0,0,0,0.06)"},
+        style={"background": _CARD, "border": f"1px solid {_BORDER}",
+               "borderRadius": "16px", "marginBottom": "10px",
+               "backdropFilter": "blur(20px)"},
     )
 
 
 # ── Layout ─────────────────────────────────────────────────────────────────────
 
-layout = dbc.Container(
-    fluid=True,
-    className="px-4 py-3",
-    style={"backgroundColor": _BG, "minHeight": "100vh"},
-    children=[
-        # Header
-        dbc.Row(className="align-items-center mb-4 g-2", children=[
-            dbc.Col(html.H4("Strategy Backtest",
-                            style={"color": _TEXT, "fontFamily": "Poppins,sans-serif",
-                                   "fontWeight": "700", "margin": 0}), width="auto"),
-            dbc.Col(dbc.Button("▶  Run Backtest", id="run-btn", color="success",
-                               size="md",
-                               style={"backgroundColor": _ORANGE, "border": "none",
-                                      "fontFamily": "Poppins,sans-serif", "fontWeight": "600",
-                                      "borderRadius": "8px", "padding": "8px 20px"}),
-                    width="auto"),
-            dbc.Col(dbc.Badge("Ready", id="status-badge", color="secondary",
-                               className="fs-6 px-3 py-2",
-                               style={"fontFamily": "Poppins,sans-serif"}), width="auto"),
-            dbc.Col(dbc.Progress(id="progress-bar", value=0, striped=True, animated=True,
-                                  style={"height": "8px", "minWidth": "200px",
-                                         "borderRadius": "4px"},
-                                  color="success", className="d-none"), width=3),
-        ]),
-
-        dbc.Row(className="g-3", children=[
-            # Left: Active Markets
-            dbc.Col(width=5, children=[
-                html.Div(style={"display": "flex", "alignItems": "center",
-                                "marginBottom": "12px"}, children=[
-                    html.Span("Active Markets",
-                              style={"fontFamily": "Poppins,sans-serif", "fontWeight": "600",
-                                     "fontSize": "0.75rem", "letterSpacing": "0.08em",
-                                     "textTransform": "uppercase", "color": _MUTED}),
-                    html.Span(id="market-count-badge",
-                              style={"marginLeft": "8px", "backgroundColor": f"{_ORANGE}20",
-                                     "color": _ORANGE, "fontSize": "0.70rem",
-                                     "fontFamily": "Poppins,sans-serif", "fontWeight": "600",
-                                     "padding": "1px 8px", "borderRadius": "20px"}),
-                ]),
-                html.Div(id="markets-panel",
-                         style={"maxHeight": "76vh", "overflowY": "auto",
-                                "paddingRight": "4px"},
-                         children=[dbc.Card(dbc.CardBody(
-                             html.P("Click Run Backtest to begin.",
-                                    style={"color": _MUTED, "margin": 0,
-                                           "fontFamily": "Lora,Georgia,serif"})),
-                             style={"backgroundColor": _CARD,
-                                    "border": f"1px solid {_BORDER}",
-                                    "borderRadius": "12px"})]),
-            ]),
-
-            # Right: PNL + summary
-            dbc.Col(width=7, children=[
-                html.Span("Portfolio P&L",
-                          style={"fontFamily": "Poppins,sans-serif", "fontWeight": "600",
-                                 "fontSize": "0.75rem", "letterSpacing": "0.08em",
-                                 "textTransform": "uppercase", "color": _MUTED,
-                                 "display": "block", "marginBottom": "12px"}),
-                dbc.Card(dbc.CardBody(
-                    dcc.Graph(id="pnl-chart", style={"height": "44vh"},
-                              config={"displayModeBar": False},
-                              figure=_empty_pnl_figure()),
-                    style={"padding": "8px"},
-                ), style={"backgroundColor": _CARD, "border": f"1px solid {_BORDER}",
-                           "borderRadius": "12px", "boxShadow": "0 1px 4px rgba(0,0,0,0.06)",
-                           "marginBottom": "14px"}),
-                dbc.Row(id="summary-row", className="g-2",
-                        children=_summary_cards({})),
-            ]),
-        ]),
-
+layout = html.Div([
+        # ── Stores / interval ─────────────────────────────────────────────────
         dcc.Interval(id="poll-interval", interval=250, disabled=True),
         dcc.Store(id="fc-cursor",   data=0),
         dcc.Store(id="fill-cursor", data=0),
         dcc.Store(id="pnl-cursor",  data=0),
         dcc.Store(id="market-data", data={}),
-    ],
-)
+
+        # ── Header ───────────────────────────────────────────────────────────
+        dbc.Row(className="align-items-center mb-4 g-2", children=[
+            dbc.Col(html.H4("Strategy Backtest",
+                            style={"color": _TEXT, "fontFamily": "Raleway,sans-serif",
+                                   "fontWeight": "700", "margin": 0}), width="auto"),
+            dbc.Col([
+                dbc.Button("▶  Run Backtest", id="run-btn", color="success", size="md",
+                           style={"background": _GREEN, "border": "none",
+                                  "fontFamily": "Inter,sans-serif", "fontWeight": "600",
+                                  "borderRadius": "50px", "padding": "8px 22px",
+                                  "color": "#14532d"}),
+                dbc.Badge("Ready", id="status-badge", color="secondary",
+                          className="fs-6 px-3 py-2 ms-2",
+                          style={"fontFamily": "Inter,sans-serif", "borderRadius": "20px",
+                                 "background": "rgba(255,255,255,0.12)", "color": _TEXT}),
+                dbc.Progress(id="progress-bar", value=0, striped=True, animated=True,
+                             style={"height": "8px", "minWidth": "160px", "borderRadius": "20px",
+                                    "marginTop": "6px"},
+                             color="success", className="d-none"),
+            ], width="auto", className="d-flex align-items-center flex-wrap ms-auto"),
+        ]),
+
+        # ── Content ──────────────────────────────────────────────────────────
+        dbc.Row(className="g-3", children=[
+            dbc.Col(width=5, children=[
+                html.Div(style={"display": "flex", "alignItems": "center",
+                                "marginBottom": "12px"}, children=[
+                    html.Span("Active Markets",
+                              style={"fontFamily": "Inter,sans-serif", "fontWeight": "600",
+                                     "fontSize": "0.72rem", "letterSpacing": "0.08em",
+                                     "textTransform": "uppercase", "color": _MUTED}),
+                    html.Span(id="market-count-badge",
+                              style={"marginLeft": "8px",
+                                     "backgroundColor": "rgba(74,222,128,0.15)",
+                                     "color": _GREEN, "fontSize": "0.70rem",
+                                     "fontFamily": "Inter,sans-serif", "fontWeight": "600",
+                                     "padding": "1px 8px", "borderRadius": "20px",
+                                     "border": "1px solid rgba(74,222,128,0.35)"}),
+                ]),
+                html.Div(id="markets-panel",
+                         style={"maxHeight": "68vh", "overflowY": "auto", "paddingRight": "4px"},
+                         children=[dbc.Card(dbc.CardBody(
+                             html.P("Click Run Backtest to begin.",
+                                    style={"color": _MUTED, "margin": 0,
+                                           "fontFamily": "Inter,sans-serif"})),
+                             style={"background": "rgba(255,255,255,0.06)",
+                                    "border": f"1px solid {_BORDER}",
+                                    "borderRadius": "16px"})]),
+            ]),
+
+            dbc.Col(width=7, children=[
+                html.Span("Portfolio P&L",
+                          style={"fontFamily": "Inter,sans-serif", "fontWeight": "600",
+                                 "fontSize": "0.72rem", "letterSpacing": "0.08em",
+                                 "textTransform": "uppercase", "color": _MUTED,
+                                 "display": "block", "marginBottom": "12px"}),
+                dbc.Card(dbc.CardBody(
+                    dcc.Graph(id="pnl-chart", style={"height": "42vh"},
+                              config={"displayModeBar": False},
+                              figure=_empty_pnl_figure()),
+                    style={"padding": "8px"},
+                ), style={"background": "rgba(255,255,255,0.06)",
+                           "border": f"1px solid {_BORDER}",
+                           "borderRadius": "16px", "marginBottom": "14px"}),
+                dbc.Row(id="summary-row", className="g-2", children=_summary_cards({})),
+            ]),
+        ]),
+])
 
 
 # ── Callbacks ──────────────────────────────────────────────────────────────────
@@ -419,7 +405,6 @@ def on_run_click(n_clicks):
     prevent_initial_call=True,
 )
 def poll_state(n_intervals, fc_cursor, fill_cursor, pnl_cursor, market_data):
-    # Ingest new forecast rows
     new_fc = state.forecast_rows[fc_cursor:]
     for row in new_fc:
         slug = row["slug"]
@@ -430,7 +415,6 @@ def poll_state(n_intervals, fc_cursor, fill_cursor, pnl_cursor, market_data):
         market_data[slug]["p"].append(row["p_model"])
     fc_cursor += len(new_fc)
 
-    # Ingest new fills
     new_fills = state.fill_rows[fill_cursor:]
     for fill in new_fills:
         slug = fill["slug"]
@@ -439,26 +423,18 @@ def poll_state(n_intervals, fc_cursor, fill_cursor, pnl_cursor, market_data):
             market_data[slug]["fills"].append({**fill, "chart_idx": idx})
     fill_cursor += len(new_fills)
 
-    # Ingest PNL
     new_pnl = state.pnl_rows[pnl_cursor:]
     pnl_cursor += len(new_pnl)
     all_pnl = state.pnl_rows[:pnl_cursor]
 
-    # ── Active market filter ──────────────────────────────────────────────────
-    # A market is "active" if:
-    #   1. It has ticks within 350s of the latest tick (not yet expired/settled)
-    #   2. The model has at least one fill on it (we actually traded it)
     latest_ts = max(
-        (d["ts"][-1] for d in market_data.values() if d["ts"]),
-        default=0,
+        (d["ts"][-1] for d in market_data.values() if d["ts"]), default=0,
     )
     active_slugs = [
         s for s, d in market_data.items()
-        if d["ts"]
-        and (latest_ts - d["ts"][-1]) < 350     # still receiving ticks
-        and len(d["fills"]) > 0                  # model actually traded it
+        if d["ts"] and (latest_ts - d["ts"][-1]) < 350 and len(d["fills"]) > 0
     ]
-    # Sort: open positions first, then by most recent tick
+
     def _sort_key(s):
         d = market_data[s]
         yp, np_ = _net_position(d["fills"])
@@ -467,7 +443,6 @@ def poll_state(n_intervals, fc_cursor, fill_cursor, pnl_cursor, market_data):
 
     active_slugs = sorted(active_slugs, key=_sort_key)[:8]
 
-    # Market cards
     if active_slugs:
         market_cards = [
             _market_card(s, market_data[s]["ts"], market_data[s]["yes"],
@@ -476,46 +451,29 @@ def poll_state(n_intervals, fc_cursor, fill_cursor, pnl_cursor, market_data):
         ]
         count_label = str(len(active_slugs))
     else:
-        placeholder_msg = (
-            "Waiting for first trades…" if state.running
-            else "Click Run Backtest to begin."
-        )
+        placeholder_msg = "Waiting for first trades…" if state.running else "Click Run Backtest to begin."
         market_cards = [dbc.Card(dbc.CardBody(
             html.P(placeholder_msg,
-                   style={"color": _MUTED, "margin": 0,
-                          "fontFamily": "Lora,Georgia,serif"})),
-            style={"backgroundColor": _CARD, "border": f"1px solid {_BORDER}",
-                   "borderRadius": "12px"})]
+                   style={"color": _MUTED, "margin": 0, "fontFamily": "Inter,sans-serif"})),
+            style={"background": _CARD, "border": f"1px solid {_BORDER}", "borderRadius": "16px"})]
         count_label = "0"
 
-    # PNL figure
     fig = _safe_figure(lambda: _pnl_figure(all_pnl))
 
-    # Status
     total     = max(state.total_ticks, 1)
     processed = state.processed_ticks
     progress  = min(int(processed / total * 100), 100)
 
     if state.error:
-        bt, bc   = f"Error: {state.error[:60]}", "danger"
-        bd, ivd  = False, True
-        pcls     = "d-none"
+        bt, bc, bd, ivd, pcls = f"Error: {state.error[:60]}", "danger",  False, True,  "d-none"
     elif state.done:
-        bt, bc   = "Done ✓", "success"
-        bd, ivd  = False, True
-        pcls     = "d-none"
+        bt, bc, bd, ivd, pcls = "Done ✓",                    "success", False, True,  "d-none"
     elif state.running and state.total_ticks == 0:
-        bt, bc   = "Loading data…", "warning"
-        bd, ivd  = True, False
-        pcls     = "d-block"
+        bt, bc, bd, ivd, pcls = "Loading data…",             "warning", True,  False, "d-block"
     elif state.running:
-        bt, bc   = f"Tick {processed:,} / {total:,}", "warning"
-        bd, ivd  = True, False
-        pcls     = "d-block"
+        bt, bc, bd, ivd, pcls = f"Tick {processed:,} / {total:,}", "warning", True, False, "d-block"
     else:
-        bt, bc   = "Ready", "secondary"
-        bd, ivd  = False, True
-        pcls     = "d-none"
+        bt, bc, bd, ivd, pcls = "Ready",                     "secondary", False, True, "d-none"
 
     return (
         market_cards, count_label, fig, _summary_cards(state.summary),

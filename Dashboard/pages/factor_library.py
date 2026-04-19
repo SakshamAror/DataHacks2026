@@ -15,16 +15,16 @@ sys.path.insert(0, str(_DATAHACKS))
 
 dash.register_page(__name__, path="/factor-library", name="Factor Library", order=2)
 
-# ── Palette ────────────────────────────────────────────────────────────────────
-_BG     = "#faf9f5"
-_CARD   = "#ffffff"
-_BORDER = "#e8e6dc"
-_TEXT   = "#141413"
-_MUTED  = "#6b6b63"
-_ORANGE = "#d97757"
-_GREEN  = "#788c5d"
-_RED    = "#c0392b"
-_BLUE   = "#6a9bcc"
+# ── Glass palette ───────────────────────────────────────────────────────────────
+_BG     = "transparent"
+_CARD   = "rgba(255,255,255,0.08)"
+_BORDER = "rgba(255,255,255,0.14)"
+_TEXT   = "#ffffff"
+_MUTED  = "rgba(255,255,255,0.5)"
+_ORANGE = "#4ade80"
+_GREEN  = "#4ade80"
+_RED    = "#f87171"
+_BLUE   = "#60a5fa"
 
 FEATURES = [
     ("btc_return_30s",          "BTC Momentum",  "Δ BTC / BTC  [−30s]",            "Momentum"),
@@ -57,8 +57,8 @@ _GROUP_COLORS = {
     "BTC Spread":   "#14b8a6",
     "Poly Prob":    _GREEN,
     "OBI":          _ORANGE,
-    "Poly Spread":  "#b58a6e",
-    "Timing":       "#9b8ec4",
+    "Poly Spread":  "#f59e0b",
+    "Timing":       "#a78bfa",
     "Divergence":   _RED,
 }
 
@@ -116,26 +116,24 @@ def _feature_card(rank, name, group, category, w, max_abs):
         html.A(
             dbc.Card(
                 dbc.CardBody([
-                    # Rank chip + category pill
                     html.Div([
                         html.Span(f"#{rank}",
                                   style={"color": _MUTED, "fontSize": "0.70rem",
-                                         "fontFamily": "Poppins,sans-serif",
+                                         "fontFamily": "Inter,sans-serif",
                                          "fontWeight": "600"}),
                         html.Span(category,
                                   style={"marginLeft": "auto",
-                                         "backgroundColor": f"{gc}18",
+                                         "backgroundColor": f"{gc}22",
                                          "color": gc,
-                                         "border": f"1px solid {gc}44",
+                                         "border": f"1px solid {gc}66",
                                          "fontSize": "0.68rem",
-                                         "fontFamily": "Poppins,sans-serif",
+                                         "fontFamily": "Inter,sans-serif",
                                          "fontWeight": "500",
                                          "padding": "1px 8px",
                                          "borderRadius": "20px"}),
                     ], style={"display": "flex", "alignItems": "center",
                                "marginBottom": "8px"}),
 
-                    # Feature name
                     html.Div(name,
                              style={"fontFamily": "monospace",
                                     "fontSize": "0.82rem",
@@ -145,11 +143,10 @@ def _feature_card(rank, name, group, category, w, max_abs):
                                     "lineHeight": "1.3",
                                     "wordBreak": "break-all"}),
 
-                    # Weight
                     html.Div([
                         html.Span("w = ",
                                   style={"color": _MUTED, "fontSize": "0.74rem",
-                                         "fontFamily": "Poppins,sans-serif"}),
+                                         "fontFamily": "Inter,sans-serif"}),
                         html.Span(f"{sign_symbol}{abs(w):.4f}",
                                   style={"color": sign_color,
                                          "fontFamily": "monospace",
@@ -157,7 +154,6 @@ def _feature_card(rank, name, group, category, w, max_abs):
                                          "fontWeight": "700"}),
                     ], style={"marginBottom": "10px"}),
 
-                    # Weight bar background
                     html.Div(
                         html.Div(style={
                             "height": "3px",
@@ -170,10 +166,10 @@ def _feature_card(rank, name, group, category, w, max_abs):
                     ),
                 ], style={"padding": "14px 14px 12px"}),
                 style={
-                    "backgroundColor": _CARD,
+                    "background": _CARD,
                     "border": f"1px solid {_BORDER}",
-                    "borderRadius": "12px",
-                    "boxShadow": "0 1px 4px rgba(0,0,0,0.05)",
+                    "borderRadius": "16px",
+                    "backdropFilter": "blur(20px)",
                     "height": "100%",
                     "transition": "box-shadow 0.15s ease, transform 0.1s ease",
                 },
@@ -211,60 +207,45 @@ _cards = [
 def _stat_card(label, value, sub, color, width=3):
     return dbc.Col(dbc.Card(dbc.CardBody([
         html.P(label, style={"color": _MUTED, "fontSize": "0.72rem",
-                              "fontFamily": "Poppins,sans-serif", "fontWeight": "600",
+                              "fontFamily": "Inter,sans-serif", "fontWeight": "600",
                               "textTransform": "uppercase", "letterSpacing": "0.05em",
                               "marginBottom": "4px"}),
-        html.H4(value, style={"color": color, "fontFamily": "Poppins,sans-serif",
+        html.H4(value, style={"color": color, "fontFamily": "Inter,sans-serif",
                                "fontWeight": "700", "marginBottom": "2px"}),
-        html.Small(sub, style={"color": _MUTED, "fontFamily": "Lora,Georgia,serif",
+        html.Small(sub, style={"color": _MUTED, "fontFamily": "Inter,sans-serif",
                                 "fontSize": "0.80rem"}),
-    ]), style={"backgroundColor": _CARD, "border": f"1px solid {_BORDER}",
-               "borderRadius": "12px", "boxShadow": "0 1px 4px rgba(0,0,0,0.05)"}),
+    ]), style={"background": _CARD, "border": f"1px solid {_BORDER}",
+               "borderRadius": "16px", "backdropFilter": "blur(20px)"}),
     width=width)
 
 
 # ── Layout ─────────────────────────────────────────────────────────────────────
 
-layout = dbc.Container(
-    fluid=True, className="px-4 py-3",
-    style={"backgroundColor": _BG, "minHeight": "100vh"},
-    children=[
+layout = html.Div([
         dbc.Row([
             dbc.Col([
                 html.H4("Factor Library",
-                        style={"color": _TEXT, "fontFamily": "Poppins,sans-serif",
+                        style={"color": _TEXT, "fontFamily": "Raleway,sans-serif",
                                "fontWeight": "700", "marginBottom": "4px"}),
                 html.P(
                     f"{len(FEATURES)} engineered features ranked by absolute model weight. "
                     "Click any card to open its wiki page.",
                     style={"color": _MUTED, "fontSize": "0.88rem",
-                           "fontFamily": "Lora,Georgia,serif", "margin": 0},
+                           "fontFamily": "Inter,sans-serif", "margin": 0},
                 ),
-            ], width=8),
-            dbc.Col([
-                dcc.Link(dbc.Button("← Model", color="outline-secondary", size="sm",
-                                    style={"borderRadius": "8px",
-                                           "fontFamily": "Poppins,sans-serif"}),
-                          href="/model"),
-                dcc.Link(dbc.Button("Backtest", color="outline-secondary", size="sm",
-                                    className="ms-2",
-                                    style={"borderRadius": "8px",
-                                           "fontFamily": "Poppins,sans-serif"}),
-                          href="/"),
-            ], width=4, className="text-end d-flex align-items-center justify-content-end"),
+            ], width=12),
         ], className="mb-4 align-items-center"),
 
         dbc.Row([
-            _stat_card("Features",         str(len(FEATURES)), "Engineered signals",  _TEXT,   4),
-            _stat_card("Avg pairwise |r|", f"{avg_r:.3f}",    "Low = diverse signals", _BLUE, 4),
+            _stat_card("Features",         str(len(FEATURES)), "Engineered signals",    _TEXT, 4),
+            _stat_card("Avg pairwise |r|", f"{avg_r:.3f}",    "Low = diverse signals",  _BLUE, 4),
             _stat_card("Top feature |w|",  f"{max_w:.3f}",    FEATURES[ranked[0][0]][0], _GREEN, 4),
         ], className="mb-4 g-3"),
 
         html.Span("All Features — click to explore",
-                  style={"fontFamily": "Poppins,sans-serif", "fontWeight": "600",
+                  style={"fontFamily": "Inter,sans-serif", "fontWeight": "600",
                          "fontSize": "0.75rem", "letterSpacing": "0.08em",
                          "textTransform": "uppercase", "color": _MUTED,
                          "display": "block", "marginBottom": "14px"}),
         dbc.Row(_cards, className="g-0"),
-    ],
-)
+])
