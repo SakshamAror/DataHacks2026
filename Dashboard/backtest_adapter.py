@@ -58,7 +58,7 @@ def _make_streaming_engine(base_engine_cls, _state: BacktestState):
                 })
             self._fill_cursor = nf
 
-            # Emit the latest portfolio snapshot every tick.
+            # Emit portfolio snapshot every tick.
             if self.snapshots:
                 snap = self.snapshots[-1]
                 _state.pnl_rows.append({
@@ -67,6 +67,19 @@ def _make_streaming_engine(base_engine_cls, _state: BacktestState):
                     "realized_pnl": snap.realized_pnl,
                     "unrealized_pnl": snap.unrealized_pnl,
                 })
+
+            # Emit settlements.
+            ns_new = len(self.all_settlements)
+            sc = getattr(self, "_settle_cursor", 0)
+            for s in self.all_settlements[sc:]:
+                _state.settlement_rows.append({
+                    "ts":        s.end_ts,
+                    "slug":      s.market_slug,
+                    "outcome":   s.outcome.value,   # "YES" or "NO"
+                    "btc_open":  s.chainlink_open,
+                    "btc_close": s.chainlink_close,
+                })
+            self._settle_cursor = ns_new
 
     return StreamingEngine
 
@@ -77,7 +90,7 @@ def _worker(data_dir: str, hours: float | None, _state: BacktestState):
     try:
         from backtester.data_loader import build_timeline
         from backtester.engine import BacktestEngine
-        from trader import MyStrategy
+        from my_strategy import MyStrategy
 
         data = build_timeline(
             data_dir=Path(data_dir),

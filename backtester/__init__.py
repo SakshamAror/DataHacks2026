@@ -1,0 +1,1 @@
+"""Polymarket BTC Competition Backtester."""

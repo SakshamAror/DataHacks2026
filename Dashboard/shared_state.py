@@ -14,19 +14,20 @@ class BacktestState:
     error: str = ""
 
     # Live tick data emitted while backtest runs
-    # Each entry: {ts, slug, yes_price, p_model}
     forecast_rows: list = field(default_factory=list)
 
-    # Portfolio value snapshots: {ts, total_value}
+    # Portfolio value snapshots: {ts, total_value, realized_pnl, unrealized_pnl}
     pnl_rows: list = field(default_factory=list)
 
     # Executed fills: {ts, slug, token, side, size, avg_price}
     fill_rows: list = field(default_factory=list)
 
+    # Market settlements: {ts, slug, outcome, btc_open, btc_close}
+    settlement_rows: list = field(default_factory=list)
+
     # Final summary populated when done=True
     summary: dict = field(default_factory=dict)
 
-    # Total ticks in the dataset (set before run starts)
     total_ticks: int = 0
     processed_ticks: int = 0
 
@@ -37,10 +38,10 @@ class BacktestState:
         self.forecast_rows.clear()
         self.pnl_rows.clear()
         self.fill_rows.clear()
+        self.settlement_rows.clear()
         self.summary.clear()
         self.total_ticks = 0
         self.processed_ticks = 0
 
 
-# Module-level singleton — imported by all pages and the adapter.
 state = BacktestState()

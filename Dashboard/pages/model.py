@@ -16,7 +16,7 @@ sys.path.insert(0, str(_DATAHACKS))
 
 dash.register_page(__name__, path="/model", name="Model", order=1)
 
-# ── Glass palette ───────────────────────────────────────────────────────────────
+# ── Glass palette ─────────────────────────────────────────────────────────────
 _BG     = "transparent"
 _CARD   = "rgba(255,255,255,0.08)"
 _BORDER = "rgba(255,255,255,0.14)"
@@ -58,8 +58,8 @@ _GROUP_COLORS = {
     "BTC Spread":   "#14b8a6",
     "Poly Prob":    _GREEN,
     "OBI":          _ORANGE,
-    "Poly Spread":  "#f59e0b",
-    "Timing":       "#a78bfa",
+    "Poly Spread":  "#b58a6e",
+    "Timing":       "#9b8ec4",
     "Divergence":   _RED,
 }
 
@@ -88,6 +88,7 @@ def _load_weights():
 
 
 def _cubic_bezier(p0, p1, p2, p3, n=60):
+    """Sample n points along a cubic bezier curve."""
     t = np.linspace(0, 1, n)
     x = (1-t)**3*p0[0] + 3*(1-t)**2*t*p1[0] + 3*(1-t)*t**2*p2[0] + t**3*p3[0]
     y = (1-t)**3*p0[1] + 3*(1-t)**2*t*p1[1] + 3*(1-t)*t**2*p2[1] + t**3*p3[1]
@@ -100,15 +101,17 @@ def _build_lr_diagram(coef):
     groups  = [f[1] for f in FEATURES[:n]]
     max_abs = max(abs(c) for c in coef) or 1.0
 
+    # Draw heaviest lines last (on top)
     order    = sorted(range(n), key=lambda i: abs(coef[i]))
     s_names  = [names[i]  for i in order]
     s_coef   = [coef[i]   for i in order]
     s_groups = [groups[i] for i in order]
 
-    y_feat           = [i / (n - 1) for i in range(n)]
-    sigma_x, sigma_y = 0.68, 0.50
-    feat_x           = 0.06
+    y_feat             = [i / (n - 1) for i in range(n)]
+    sigma_x, sigma_y   = 0.68, 0.50
+    feat_x             = 0.06
 
+    # Sample output probability (filler for illustration)
     sample_prob = 0.643
 
     fig = go.Figure()
@@ -118,16 +121,17 @@ def _build_lr_diagram(coef):
         lw    = 0.4 + 13.0 * abs(w) / max_abs
         alpha = 0.18 + 0.58 * abs(w) / max_abs
         if w >= 0:
-            r, g_c, b = 74, 222, 128   # green (#4ade80)
+            r, g_c, b = 74, 222, 128
         else:
-            r, g_c, b = 248, 113, 113  # red (#f87171)
+            r, g_c, b = 248, 113, 113
         color = f"rgba({r},{g_c},{b},{alpha:.2f})"
 
         yf = y_feat[i]
+        # Control points: leave horizontally, arrive horizontally at sigma
         bx, by = _cubic_bezier(
             (feat_x, yf),
-            (feat_x + 0.28, yf),
-            (sigma_x - 0.22, sigma_y),
+            (feat_x + 0.28, yf),       # pull right along feature level
+            (sigma_x - 0.22, sigma_y), # approach from the left at sigma height
             (sigma_x, sigma_y),
         )
         fig.add_trace(go.Scatter(
@@ -137,18 +141,18 @@ def _build_lr_diagram(coef):
             hovertemplate=f"<b>{name}</b><br>Group: {g}<br>Weight: {w:+.4f}<extra></extra>",
         ))
 
-    # ── Feature nodes ─────────────────────────────────────────────────────────
+    # ── Feature nodes (clickable) ─────────────────────────────────────────────
     node_colors = [_GROUP_COLORS.get(g, "#888") for g in s_groups]
     fig.add_trace(go.Scatter(
         x=[feat_x] * n, y=y_feat,
         mode="markers+text",
         marker=dict(size=10, color=node_colors,
-                    line=dict(width=1.5, color="rgba(255,255,255,0.6)"),
+                    line=dict(width=1.5, color="white"),
                     symbol="circle"),
         text=s_names,
         textposition="middle left",
-        textfont=dict(family="monospace", size=9.5, color="rgba(255,255,255,0.85)"),
-        customdata=s_names,
+        textfont=dict(family="monospace", size=9.5, color=_ORANGE),
+        customdata=s_names,   # used by click callback
         showlegend=False,
         hovertemplate="<b>%{text}</b>  — click to open wiki<extra></extra>",
         name="features",
@@ -158,20 +162,23 @@ def _build_lr_diagram(coef):
     fig.add_trace(go.Scatter(
         x=[sigma_x], y=[sigma_y],
         mode="markers+text",
-        marker=dict(size=92, color="rgba(30,58,138,0.85)",
-                    line=dict(width=3, color="rgba(96,165,250,0.7)"), symbol="circle"),
+        marker=dict(size=92, color="#1e3a8a",
+                    line=dict(width=3, color="#3b5fc0"), symbol="circle"),
         text=["σ"],
-        textfont=dict(size=28, color="white", family="Georgia, serif"),
+        textfont=dict(size=28, color="white", family="Inter, sans-serif"),
         textposition="middle center",
         showlegend=False, hoverinfo="skip",
     ))
 
     # ── Arrow sigma → output ──────────────────────────────────────────────────
+    # sigma circle radius in data coords ≈ 0.06 at typical viewport width.
+    # Tail starts just outside sigma's right edge; head stops before output text.
     prob_color = _GREEN if sample_prob >= 0.5 else _RED
-    out_x      = 0.96
-    arrow_tail = sigma_x + 0.07
-    arrow_head = out_x   - 0.11
+    out_x      = 0.96    # output label centre
+    arrow_tail = sigma_x + 0.07   # clear of sigma circle edge
+    arrow_head = out_x   - 0.11   # clear of output text
 
+    # Draw arrow as a Scatter line + arrowhead annotation so we control positions precisely
     fig.add_trace(go.Scatter(
         x=[arrow_tail, arrow_head],
         y=[sigma_y, sigma_y],
@@ -179,6 +186,7 @@ def _build_lr_diagram(coef):
         line=dict(color=_MUTED, width=2),
         showlegend=False, hoverinfo="skip",
     ))
+    # Arrowhead: a filled right-pointing triangle marker at the tip
     fig.add_trace(go.Scatter(
         x=[arrow_head], y=[sigma_y],
         mode="markers",
@@ -186,7 +194,7 @@ def _build_lr_diagram(coef):
         showlegend=False, hoverinfo="skip",
     ))
 
-    # ── Sample output annotations ─────────────────────────────────────────────
+    # ── Sample output text (no bounding box) ─────────────────────────────────
     fig.add_annotation(
         x=out_x, y=sigma_y + 0.10,
         text="sample output",
@@ -217,7 +225,6 @@ def _build_lr_diagram(coef):
                                   name=label, showlegend=True))
 
     fig.update_layout(
-        template="plotly_dark",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         height=max(640, n * 28),
@@ -226,12 +233,12 @@ def _build_lr_diagram(coef):
         yaxis=dict(range=[-0.06, 1.06], showgrid=False,
                    showticklabels=False, zeroline=False, fixedrange=True),
         margin=dict(l=215, r=20, t=30, b=30),
-        font=dict(color="rgba(255,255,255,0.75)", family="Inter, system-ui, sans-serif"),
+        font=dict(color=_TEXT, family="Inter, sans-serif"),
         hovermode="closest",
         legend=dict(
             orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1,
             font=dict(size=11, color=_TEXT, family="Inter,sans-serif"),
-            bgcolor="rgba(255,255,255,0.08)",
+            bgcolor="rgba(0,0,0,0.3)",
             bordercolor=_BORDER, borderwidth=1,
         ),
     )
@@ -251,15 +258,16 @@ def _feature_table_rows(coef):
                     className="text-center"),
             html.Td(dcc.Link(
                 name, href=f"/feature-wiki?feature={name}",
-                style={"color": _GREEN, "fontFamily": "monospace",
+                style={"color": _ORANGE, "fontFamily": "monospace",
                        "fontSize": "0.84rem", "textDecoration": "none"},
             )),
             html.Td(dbc.Badge(group, style={
-                "backgroundColor": f"{gc}22", "color": gc,
-                "border": f"1px solid {gc}66", "fontSize": "0.72rem",
-                "fontFamily": "Inter,sans-serif", "borderRadius": "20px",
+                "backgroundColor": f"{gc}18", "color": gc,
+                "border": f"1px solid {gc}55", "fontSize": "0.72rem",
+                "fontFamily": "Inter,sans-serif",
             })),
-            html.Td(html.Code(expr, style={"fontSize": "0.79rem"})),
+            html.Td(html.Code(expr, style={"fontSize": "0.79rem", "color": _TEXT,
+                                            "backgroundColor": "transparent"})),
             html.Td(html.Span(f"{w:+.4f}", style={
                 "color": sign_color, "fontFamily": "monospace",
                 "fontSize": "0.84rem", "fontWeight": "700",
@@ -282,16 +290,19 @@ def _stat_card(label, value, color=None):
         html.H5(value, style={"color": color or _TEXT, "fontFamily": "monospace",
                                "fontWeight": "700", "margin": 0, "fontSize": "0.95rem"}),
     ]), style={"background": _CARD, "border": f"1px solid {_BORDER}",
-               "borderRadius": "16px", "backdropFilter": "blur(20px)"}),
+               "borderRadius": "12px", "boxShadow": "0 1px 4px rgba(0,0,0,0.05)"}),
     width=3)
 
 
-layout = html.Div([
-        html.Div(id="model-nav-target", style={"display": "none"}),
+layout = dbc.Container(
+    fluid=True, className="px-4 py-3",
+    style={"backgroundColor": _BG, "minHeight": "100vh"},
+    children=[
+        dcc.Location(id="model-nav", refresh=True),
         dbc.Row([
             dbc.Col([
                 html.H4("Logistic Regression Model",
-                        style={"color": _TEXT, "fontFamily": "Raleway,sans-serif",
+                        style={"color": _TEXT, "fontFamily": "Inter,sans-serif",
                                "fontWeight": "700", "marginBottom": "4px"}),
                 html.P([
                     "Binary classifier — predicts P(BTC UP) for each 5-minute contract. "
@@ -299,7 +310,17 @@ layout = html.Div([
                     " before fitting. Hover any line to see exact weight.",
                 ], style={"color": _MUTED, "fontSize": "0.88rem",
                            "fontFamily": "Inter,sans-serif", "margin": 0}),
-            ], width=12),
+            ], width=8),
+            dbc.Col([
+                dcc.Link(dbc.Button("← Backtest", color="outline-secondary", size="sm",
+                                    style={"borderRadius": "8px",
+                                           "fontFamily": "Inter,sans-serif"}), href="/"),
+                dcc.Link(dbc.Button("Factor Library →", size="sm", className="ms-2",
+                                    style={"borderRadius": "8px", "border": "none",
+                                           "backgroundColor": _ORANGE, "color": "white",
+                                           "fontFamily": "Inter,sans-serif"}),
+                          href="/factor-library"),
+            ], width=4, className="text-end d-flex align-items-center justify-content-end"),
         ], className="mb-4 align-items-center"),
 
         dbc.Row([
@@ -330,7 +351,7 @@ layout = html.Div([
                           config={"displayModeBar": False}),
             ])
         ], style={"background": _CARD, "border": f"1px solid {_BORDER}",
-                   "borderRadius": "16px", "backdropFilter": "blur(20px)",
+                   "borderRadius": "12px", "boxShadow": "0 1px 4px rgba(0,0,0,0.06)",
                    "marginBottom": "24px"}),
 
         html.Span("Feature Details — ranked by |weight|",
@@ -367,14 +388,15 @@ layout = html.Div([
             ], borderless=True, size="sm", className="mb-0"),
             style={"padding": "4px"},
         ), style={"background": _CARD, "border": f"1px solid {_BORDER}",
-                   "borderRadius": "16px", "backdropFilter": "blur(20px)"}),
-])
+                   "borderRadius": "12px", "boxShadow": "0 1px 4px rgba(0,0,0,0.06)"}),
+    ],
+)
 
 
-# ── Click-to-wiki callback ──────────────────────────────────────────────────────
+# ── Click-to-wiki: write URL into hidden div, client-side JS does navigation ──
 
 @callback(
-    Output("model-nav-target", "children"),
+    Output("model-nav", "href"),
     Input("lr-diagram", "clickData"),
     prevent_initial_call=True,
 )
@@ -387,6 +409,5 @@ def navigate_to_wiki(click_data):
     cd = pts[0].get("customdata")
     feat_names = [f[0] for f in FEATURES]
     if cd and cd in feat_names:
-        url = f"/feature-wiki?feature={cd}"
-        return html.Script(f"window.location.href='{url}';")
+        return f"/feature-wiki?feature={cd}"
     return dash.no_update
